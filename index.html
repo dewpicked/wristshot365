@@ -209,15 +209,12 @@ body{font-family:'Playfair Display',Georgia,serif;background:var(--bg);color:var
   </div>
 </div>
 
-<!-- Google Identity Services -->
-
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-
 <script>
 const CLIENT_ID = '55739970801-n6nq071b0kjpkjbiepenl1jct4mav7po.apps.googleusercontent.com';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const STORAGE_KEY = 'wristshot365_v11';
 const FOLDER_NAME = 'Wristshot365';
+const REDIRECT_URI = location.origin + location.pathname;
 
 let photos = [];
 let startDate = null;
@@ -230,29 +227,24 @@ let manualDate = null;
 let accessToken = null;
 let folderId = null;
 
-// ── Google Auth ───────────────────────────────────────────────────────────────
+// ── Google Auth (implicit flow) ───────────────────────────────────────────────
 
 function signIn() {
-  const client = google.accounts.oauth2.initTokenClient({
+  const params = new URLSearchParams({
     client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: 'token',
     scope: SCOPES,
-    callback: async (resp) => {
-      if (resp.error) { showToast('Inloggning misslyckades: ' + resp.error, true); return; }
-      accessToken = resp.access_token;
-      localStorage.setItem('gsi_token', accessToken);
-      updateAuthUI(true);
-      showToast('Inloggad på Google Drive ✓');
-      folderId = await ensureFolder();
-      await syncMetaFromDrive();
-    }
+    include_granted_scopes: 'true'
   });
-  client.requestAccessToken();
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
 }
 
 function signOut() {
   accessToken = null;
   folderId = null;
-  localStorage.removeItem('gsi_token');
+  localStorage.removeItem('gauth_token');
+  localStorage.removeItem('gauth_expiry');
   updateAuthUI(false);
   showToast('Utloggad', false, true);
 }
@@ -263,19 +255,30 @@ function updateAuthUI(loggedIn) {
   updateHeader();
 }
 
-// Restore token from localStorage on load
 function restoreAuth() {
-  const t = localStorage.getItem('gsi_token');
-  if (t) {
-    accessToken = t;
+  // Check for token in URL hash (after redirect from Google)
+  const hash = new URLSearchParams(location.hash.replace('#', ''));
+  const tokenFromHash = hash.get('access_token');
+  const expiresIn = hash.get('expires_in');
+  if (tokenFromHash) {
+    accessToken = tokenFromHash;
+    const expiry = Date.now() + (parseInt(expiresIn) || 3600) * 1000;
+    localStorage.setItem('gauth_token', accessToken);
+    localStorage.setItem('gauth_expiry', expiry);
+    // Clean URL
+    history.replaceState(null, '', location.pathname);
     updateAuthUI(true);
-    // Verify token is still valid
-    fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' + t)
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) { signOut(); }
-        else { ensureFolder().then(id => { folderId = id; }); }
-      });
+    showToast('Inloggad på Google Drive ✓');
+    ensureFolder().then(id => { folderId = id; syncMetaFromDrive(); });
+    return;
+  }
+  // Check stored token
+  const stored = localStorage.getItem('gauth_token');
+  const expiry = parseInt(localStorage.getItem('gauth_expiry') || '0');
+  if (stored && Date.now() < expiry) {
+    accessToken = stored;
+    updateAuthUI(true);
+    ensureFolder().then(id => { folderId = id; });
   }
 }
 
