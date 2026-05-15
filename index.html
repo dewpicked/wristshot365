@@ -685,7 +685,8 @@ async function confirmSave() {
           showToast(`☁ Dag ${dn} i Dropbox ✓`);
           renderGallery();
         }
-      } catch(e) { console.error('Dropbox:', e); showToast('Dropbox-fel: ' + e.message, true); }
+      } catch(e) { showToast('Dropbox-fel: ' + (e.message || JSON.stringify(e)), true); }
+
     }
   } catch(e) {
     showToast('Fel: ' + e.message, true);
