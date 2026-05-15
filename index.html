@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wristshot 365</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Mono:wght@300;400;500&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f7f3ee;--surface:#fff;--border:#e4dcd2;
+  --ink:#1a1410;--mid:#6b5a47;--muted:#b0a090;
+  --gold:#9a7a4a;--gold-l:#c8a96e;--accent:#ede8e0;
+  --red:#c0392b;--green:#2d6a3a;
+}
+body{font-family:'Playfair Display',Georgia,serif;background:var(--bg);color:var(--ink);min-height:100vh}
+
+/* Header */
+.header{background:var(–surface);border-bottom:1px solid var(–border);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.logo{font-size:20px;font-weight:700;letter-spacing:.12em;color:var(–gold)}
+.logo-sub{font-size:10px;letter-spacing:.28em;color:var(–muted);margin-top:2px;font-family:‘DM Mono’,monospace}
+.count{text-align:right}
+.count-num{font-size:30px;font-weight:700}
+.count-denom{font-size:13px;color:var(–muted)}
+.count-sub{font-size:10px;color:var(–gold);font-family:‘DM Mono’,monospace;margin-top:2px}
+
+/* Progress */
+.progress-bar{height:3px;background:var(–accent)}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(–gold),var(–gold-l));transition:width .6s ease}
+
+/* Nav */
+.nav{background:var(–surface);border-bottom:1px solid var(–border);padding:0 28px;display:flex}
+.nav-btn{background:none;border:none;border-bottom:2px solid transparent;color:var(–muted);padding:13px 18px;cursor:pointer;font-size:11px;letter-spacing:.2em;font-family:‘DM Mono’,monospace;margin-bottom:-1px;transition:color .2s}
+.nav-btn.active{border-bottom-color:var(–gold);color:var(–gold)}
+
+/* Toast */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:var(–green);color:#fff;padding:10px 22px;font-size:13px;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.15);border-radius:2px;white-space:nowrap;font-family:‘DM Mono’,monospace;display:none}
+.toast.error{background:var(–red)}
+.toast.warn{background:#c87a20}
+.toast.show{display:block}
+
+/* Setup banner */
+.setup-banner{background:#fff8ee;border:1px solid var(–gold-l);padding:16px 20px;margin:16px 28px;border-radius:2px;font-family:‘DM Mono’,monospace;font-size:12px;color:var(–mid)}
+.setup-banner strong{color:var(–gold)}
+.setup-row{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.setup-input{flex:1;min-width:200px;background:var(–surface);border:1px solid var(–border);color:var(–ink);padding:9px 12px;font-size:12px;font-family:‘DM Mono’,monospace;outline:none;border-radius:2px}
+.setup-input:focus{border-color:var(–gold)}
+.btn-setup{background:var(–gold);color:#fff;border:none;padding:9px 18px;cursor:pointer;font-size:11px;letter-spacing:.15em;font-family:‘DM Mono’,monospace;border-radius:2px}
+
+/* Main */
+.main{padding:28px;max-width:960px;margin:0 auto}
+.view{display:none}
+.view.active{display:block}
+
+/* Empty */
+.empty{text-align:center;padding:80px 0}
+.empty-icon{font-size:44px;color:var(–accent);margin-bottom:16px}
+.empty-title{font-size:12px;letter-spacing:.25em;color:var(–mid);font-family:‘DM Mono’,monospace}
+.empty-sub{font-size:13px;color:var(–muted);margin-top:8px;font-family:‘DM Mono’,monospace}
+
+/* Today banner */
+.today-banner{background:var(–surface);border:1px solid var(–gold-l);padding:13px 20px;margin-bottom:22px;border-radius:2px;display:flex;justify-content:space-between;align-items:center}
+.today-banner span{font-size:13px;color:var(–mid);font-family:‘DM Mono’,monospace}
+
+/* Grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px}
+.grid-item{cursor:pointer;aspect-ratio:1;overflow:hidden;background:var(–accent);position:relative;border-radius:2px;box-shadow:0 1px 6px rgba(0,0,0,.07)}
+.grid-item img{width:100%;height:100%;object-fit:cover;transition:transform .3s}
+.grid-item:hover img{transform:scale(1.04)}
+.grid-label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(250,247,243,.92));padding:18px 8px 6px}
+.grid-day{font-size:10px;color:var(–gold);font-family:‘DM Mono’,monospace;font-weight:500;display:flex;justify-content:space-between}
+.grid-note{font-size:9px;color:var(–mid);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:‘DM Mono’,monospace;margin-top:2px}
+.grid-uploading{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(–gold-l);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Upload */
+.upload-wrap{max-width:460px;margin:0 auto}
+.field-label{font-size:10px;color:var(–muted);letter-spacing:.2em;margin-bottom:7px;font-family:‘DM Mono’,monospace}
+.upload-heading{font-size:20px;margin-bottom:22px}
+.dropzone{border:2px dashed var(–border);border-radius:2px;padding:52px 32px;text-align:center;cursor:pointer;background:var(–surface);transition:all .2s;margin-bottom:20px}
+.dropzone.drag{border-color:var(–gold);background:var(–accent)}
+.dropzone-icon{font-size:36px;color:var(–accent);margin-bottom:12px}
+.dropzone-text{font-size:13px;color:var(–muted);font-family:‘DM Mono’,monospace}
+.dropzone-sub{font-size:11px;color:var(–muted);margin-top:4px;font-family:‘DM Mono’,monospace}
+.preview-img{width:100%;border-radius:2px;display:block;max-height:400px;object-fit:contain;box-shadow:0 4px 20px rgba(0,0,0,.1);margin-bottom:10px}
+
+/* Date picker */
+.date-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.date-chip{background:var(–accent);border:1px solid var(–border);color:var(–mid);padding:7px 13px;font-size:11px;font-family:‘DM Mono’,monospace;border-radius:2px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.date-chip:hover{border-color:var(–gold);color:var(–gold)}
+.date-chip.active{background:var(–gold);color:#fff;border-color:var(–gold)}
+.date-chip.exif{border-style:dashed}
+.date-manual-input{background:var(–surface);border:1px solid var(–border);color:var(–ink);padding:7px 12px;font-size:12px;font-family:‘DM Mono’,monospace;outline:none;border-radius:2px;flex:1;min-width:140px}
+.date-manual-input:focus{border-color:var(–gold)}
+.date-hint{font-size:10px;color:var(–muted);font-family:‘DM Mono’,monospace;margin-bottom:18px}
+
+.note-input{width:100%;background:var(–surface);border:1px solid var(–border);color:var(–ink);padding:11px 14px;font-size:13px;font-family:‘Playfair Display’,serif;outline:none;border-radius:2px;margin-bottom:18px}
+.note-input:focus{border-color:var(–gold)}
+
+/* Buttons */
+.btn{width:100%;border:none;padding:15px;cursor:pointer;font-size:12px;letter-spacing:.2em;font-family:‘DM Mono’,monospace;border-radius:2px;transition:background .2s}
+.btn-gold{background:var(–gold);color:#fff}
+.btn-gold:hover{background:var(–gold-l)}
+.btn-gold:disabled{background:var(–muted);cursor:default}
+.btn-outline{background:none;border:1px solid var(–border);color:var(–mid);padding:8px 16px;cursor:pointer;font-size:11px;letter-spacing:.15em;font-family:‘DM Mono’,monospace;border-radius:2px;width:100%;margin-top:8px}
+.btn-sm{background:var(–gold);color:#fff;border:none;padding:8px 16px;cursor:pointer;font-size:11px;letter-spacing:.15em;font-family:‘DM Mono’,monospace;border-radius:2px}
+.btn-export{background:var(–gold);color:#fff;border:none;padding:13px 26px;cursor:pointer;font-size:11px;letter-spacing:.2em;font-family:‘DM Mono’,monospace;border-radius:2px;margin-right:12px;margin-bottom:12px}
+.btn-export:disabled{background:var(–accent);color:var(–muted);cursor:default}
+.btn-download{background:var(–surface);color:var(–gold);border:1px solid var(–gold);padding:11px 22px;cursor:pointer;font-size:11px;letter-spacing:.2em;font-family:‘DM Mono’,monospace;border-radius:2px}
+
+/* Export */
+.export-info{background:var(–accent);border:1px solid var(–border);padding:14px 18px;border-radius:2px;margin-bottom:24px;font-size:12px;color:var(–mid);font-family:‘DM Mono’,monospace;line-height:1.7}
+#collage-canvas{max-width:100%;display:none;border:1px solid var(–border);border-radius:2px;margin-bottom:14px}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(26,20,16,.65);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
+.modal-overlay.open{display:flex}
+.modal{background:var(–surface);border-radius:2px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden}
+.modal img{width:100%;display:block;object-fit:cover}
+.modal-body{padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start}
+.modal-day{font-size:24px;font-weight:700;color:var(–gold)}
+.modal-date{font-size:13px;color:var(–muted);margin-top:2px;font-family:‘DM Mono’,monospace}
+.modal-note{font-size:13px;color:var(–mid);margin-top:8px;font-style:italic}
+.modal-status{font-size:11px;color:var(–muted);margin-top:6px;font-family:‘DM Mono’,monospace}
+.btn-delete{background:none;border:1px solid #e0c0c0;color:var(–red);padding:7px 13px;cursor:pointer;font-size:11px;letter-spacing:.1em;font-family:‘DM Mono’,monospace;border-radius:2px;white-space:nowrap}
+</style>
+
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- Header -->
+
+<div class="header">
+  <div>
+    <div class="logo">WRISTSHOT</div>
+    <div class="logo-sub">365 DAGAR · ETT ARMBANDSUR I TAGET</div>
+  </div>
+  <div class="count">
+    <span class="count-num" id="count-num">0</span>
+    <span class="count-denom"> / 365</span>
+    <div class="count-sub" id="count-sub"></div>
+  </div>
+</div>
+
+<div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+
+<!-- Nav -->
+
+<div class="nav">
+  <button class="nav-btn active" onclick="setView('gallery')">GALLERI</button>
+  <button class="nav-btn" onclick="setView('upload')">LÄGG TILL</button>
+  <button class="nav-btn" onclick="setView('export')">EXPORTERA</button>
+  <button class="nav-btn" onclick="setView('settings')">INSTÄLLNINGAR</button>
+</div>
+
+<!-- Dropbox setup banner (shown when no token) -->
+
+<div class="setup-banner" id="setup-banner" style="display:none">
+  <strong>Klistra in din Dropbox Access Token för att aktivera molnlagring</strong><br>
+  Bilder sparas i <code>/wristshot365/</code> i din Dropbox. Token lagras bara lokalt i webbläsaren.
+  <div class="setup-row">
+    <input type="password" class="setup-input" id="token-input-banner" placeholder="sl.xxxxxxxxxxxxxxxx...">
+    <button class="btn-setup" onclick="saveTokenFromBanner()">SPARA TOKEN</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Gallery -->
+
+  <div class="view active" id="view-gallery">
+    <div class="empty" id="empty-state">
+      <div class="empty-icon">◷</div>
+      <div class="empty-title">INGA BILDER ÄN</div>
+      <div class="empty-sub">Lägg till dagens wristshot för att börja</div>
+      <button class="btn-sm" style="margin-top:24px" onclick="setView('upload')">BÖRJA NU →</button>
+    </div>
+    <div id="today-banner" class="today-banner" style="display:none">
+      <span id="today-banner-text"></span>
+      <button class="btn-sm" onclick="setView('upload')">LÄGG TILL IDAG</button>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <!-- Upload -->
+
+  <div class="view" id="view-upload">
+    <div class="upload-wrap">
+      <div class="field-label" id="upload-label">DAG 1 · —</div>
+      <div class="upload-heading">Vilken klocka bär du idag?</div>
+
+```
+  <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+    <div class="dropzone-icon">◷</div>
+    <div class="dropzone-text">Klicka eller dra hit en bild</div>
+    <div class="dropzone-sub">Originalet stannar i din fotoapp</div>
+  </div>
+  <img id="preview-img" class="preview-img" style="display:none">
+  <button class="btn-outline" id="change-btn" style="display:none" onclick="document.getElementById('file-input').click()">BYTA BILD</button>
+  <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])">
+
+  <!-- Date -->
+  <div class="field-label" style="margin-top:4px">DATUM</div>
+  <div class="date-row">
+    <button class="date-chip active" id="chip-today" onclick="setDateMode('today')">IDAG</button>
+    <button class="date-chip exif" id="chip-exif" onclick="setDateMode('exif')" style="display:none">📷 FRÅN BILD</button>
+    <button class="date-chip" id="chip-manual" onclick="setDateMode('manual')">VÄLJ DATUM</button>
+    <input type="date" class="date-manual-input" id="date-manual-input" style="display:none" onchange="onManualDateChange()">
+  </div>
+  <div class="date-hint" id="date-hint">Idag · —</div>
+
+  <!-- Note -->
+  <div class="field-label">KLOCKA / ANTECKNING (valfritt)</div>
+  <input type="text" class="note-input" id="note-input" placeholder="t.ex. Zenith på länk · jobbet">
+
+  <button class="btn btn-gold" id="save-btn" onclick="confirmSave()">VÄLJ BILD</button>
+</div>
+```
+
+  </div>
+
+  <!-- Export -->
+
+  <div class="view" id="view-export">
+    <div class="field-label">EXPORTERA</div>
+    <div style="font-size:20px;margin-bottom:22px" id="export-count">0 bilder</div>
+    <div class="export-info">
+      📁 <strong>Bilder sparas automatiskt i Dropbox/wristshot365/</strong><br>
+      ZIP-exporten innehåller alla bilder + metadata.json – dra in i valfri mapp.
+    </div>
+    <div style="margin-bottom:28px">
+      <button class="btn-export" onclick="generateCollage()" id="collage-btn">SKAPA KOLLAGE (PNG)</button>
+      <button class="btn-export" onclick="exportZip()" id="zip-btn">LADDA NED ZIP</button>
+    </div>
+    <canvas id="collage-canvas"></canvas>
+    <button class="btn-download" id="download-collage-btn" style="display:none" onclick="downloadCollage()">LADDA NED KOLLAGE</button>
+  </div>
+
+  <!-- Settings -->
+
+  <div class="view" id="view-settings">
+    <div class="field-label">DROPBOX-TOKEN</div>
+    <div style="font-size:13px;color:var(--mid);font-family:'DM Mono',monospace;margin-bottom:16px;line-height:1.6">
+      Generera en Access Token på <a href="https://www.dropbox.com/developers/apps" target="_blank" style="color:var(--gold)">dropbox.com/developers/apps</a>.<br>
+      Token lagras bara lokalt i din webbläsare – aldrig skickas någonstans.
+    </div>
+    <div class="field-label">TOKEN</div>
+    <input type="password" class="note-input" id="token-input-settings" placeholder="sl.xxxxxxxxxxxxxxxx...">
+    <button class="btn btn-gold" onclick="saveTokenFromSettings()">SPARA TOKEN</button>
+    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
+      <div class="field-label">SYNKA METADATA FRÅN DROPBOX</div>
+      <div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:12px">Ladda ned metadata.json från Dropbox för att återställa efter rensad webbläsare.</div>
+      <button class="btn-export" onclick="syncFromDropbox()">SYNKA FRÅN DROPBOX</button>
+    </div>
+    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
+      <div class="field-label" style="color:var(--red)">RENSA LOKAL DATA</div>
+      <div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:12px">Tar bort lokalt sparade thumbnails. Bilder i Dropbox påverkas inte.</div>
+      <button class="btn-export" style="background:var(--red)" onclick="clearLocal()">RENSA LOKAL DATA</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+
+<div class="modal-overlay" id="modal" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <img id="modal-img" src="" alt="">
+    <div class="modal-body">
+      <div>
+        <div class="modal-day" id="modal-day"></div>
+        <div class="modal-date" id="modal-date"></div>
+        <div class="modal-note" id="modal-note"></div>
+        <div class="modal-status" id="modal-status"></div>
+      </div>
+      <button class="btn-delete" onclick="deleteSelected()">TA BORT</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+// KLISTRA IN DIN DROPBOX TOKEN HÄR (eller via Inställningar i appen):
+const HARDCODED_TOKEN = '';
+
+const STORAGE_KEY = 'wristshot365_v10';
+const DBX_FOLDER = '/wristshot365';
+const DBX_META = DBX_FOLDER + '/metadata.json';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let photos = [];
+let startDate = null;
+let selectedDate = null;
+let currentPreview = null;
+let currentFile = null;
+let dateMode = 'today';
+let exifDate = null;
+let manualDate = null;
+
+// ── Token ─────────────────────────────────────────────────────────────────────
+function getToken() {
+  return HARDCODED_TOKEN || localStorage.getItem('dbx_token') || '';
+}
+function saveTokenFromBanner() {
+  const t = document.getElementById('token-input-banner').value.trim();
+  if (!t) return;
+  localStorage.setItem('dbx_token', t);
+  document.getElementById('setup-banner').style.display = 'none';
+  showToast('Token sparad ✓');
+  syncFromDropbox();
+}
+function saveTokenFromSettings() {
+  const t = document.getElementById('token-input-settings').value.trim();
+  if (!t) return;
+  localStorage.setItem('dbx_token', t);
+  showToast('Token sparad ✓');
+  document.getElementById('setup-banner').style.display = 'none';
+}
+
+// ── Dropbox API ───────────────────────────────────────────────────────────────
+async function dbxUploadFile(path, data, isText = false) {
+  const token = getToken();
+  if (!token) return null;
+  const body = isText ? new TextEncoder().encode(data) : data;
+  const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false }),
+      'Content-Type': 'application/octet-stream'
+    },
+    body
+  });
+  if (!r.ok) { console.error('Dropbox upload error', r.status, await r.text()); return null; }
+  return r.json();
+}
+
+async function dbxDownloadFile(path) {
+  const token = getToken();
+  if (!token) return null;
+  const r = await fetch('https://content.dropboxapi.com/2/files/download', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Dropbox-API-Arg': JSON.stringify({ path })
+    }
+  });
+  if (!r.ok) return null;
+  return r;
+}
+
+async function uploadMetadata() {
+  const meta = {
+    startDate,
+    updatedAt: new Date().toISOString(),
+    photos: photos.map(({ date, day, note, dropboxPath }) => ({ date, day, note, dropboxPath: dropboxPath || null }))
+  };
+  await dbxUploadFile(DBX_META, JSON.stringify(meta, null, 2), true);
+}
+
+async function uploadImageToDropbox(jpegBase64, filename) {
+  const path = DBX_FOLDER + '/' + filename;
+  const binary = atob(jpegBase64.split(',')[1]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const result = await dbxUploadFile(path, bytes.buffer);
+  return result ? path : null;
+}
+
+async function syncFromDropbox() {
+  const token = getToken();
+  if (!token) { showToast('Ingen token – gå till Inställningar', true); return; }
+  showToast('Synkar från Dropbox...', false, true);
+  try {
+    const r = await dbxDownloadFile(DBX_META);
+    if (!r) { showToast('Ingen metadata i Dropbox än', false, true); return; }
+    const meta = await r.json();
+    if (meta?.photos) {
+      // Merge: keep local thumbs if we have them, add new entries from Dropbox
+      const localMap = {};
+      photos.forEach(p => { localMap[p.date] = p; });
+      const merged = meta.photos.map(p => ({
+        ...p,
+        thumb: localMap[p.date]?.thumb || null
+      }));
+      photos = merged.sort((a,b) => a.date.localeCompare(b.date));
+      startDate = meta.startDate || null;
+      saveLocal();
+      renderGallery();
+      showToast(`Synkat – ${photos.length} bilder`);
+    }
+  } catch(e) {
+    showToast('Sync-fel: ' + e.message, true);
+  }
+}
+
+// ── Local storage ─────────────────────────────────────────────────────────────
+function saveLocal() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      startDate,
+      updatedAt: new Date().toISOString(),
+      photos: photos.map(({ date, day, note, thumb, dropboxPath }) => ({
+        date, day, note,
+        thumb: thumb || null,
+        dropboxPath: dropboxPath || null
+      }))
+    }));
+  } catch(e) {
+    // Storage full – save without thumbs
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        startDate,
+        photos: photos.map(({ date, day, note, dropboxPath }) => ({ date, day, note, dropboxPath: dropboxPath || null }))
+      }));
+      showToast('Lokal lagring full – thumbnails borttagna', false, true);
+    } catch(e2) { console.error('Save failed', e2); }
+  }
+}
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      photos = d.photos || [];
+      startDate = d.startDate || null;
+    }
+  } catch(e) { console.error('load:', e); }
+}
+
+function clearLocal() {
+  if (!confirm('Rensa all lokal data? Bilder i Dropbox påverkas inte.')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  photos = []; startDate = null;
+  renderGallery();
+  showToast('Lokal data rensad');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function formatDate(d) {
+  return new Date(d + 'T12:00:00').toLocaleDateString('sv-SE', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function dayNum(start, date) {
+  return Math.floor((new Date(date + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000) + 1;
+}
+
+function makeThumb(base64, size = 300) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onerror = rej;
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+      const ar = img.width / img.height;
+      let sx=0, sy=0, sw=img.width, sh=img.height;
+      if (ar > 1) { sw = img.height; sx = (img.width - sw) / 2; }
+      else { sh = img.width; sy = (img.height - sh) / 2; }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
+      res(c.toDataURL('image/jpeg', 0.75));
+    };
+    img.src = base64;
+  });
+}
+
+function compressJpeg(base64, maxPx = 1600, quality = 0.85) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onerror = rej;
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      res(c.toDataURL('image/jpeg', quality));
+    };
+    img.src = base64;
+  });
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, error = false, warn = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (error ? ' error' : warn ? ' warn' : '');
+  setTimeout(() => t.className = 'toast', 4000);
+}
+
+// ── Date mode ─────────────────────────────────────────────────────────────────
+function getChosenDate() {
+  if (dateMode === 'exif' && exifDate) return exifDate;
+  if (dateMode === 'manual' && manualDate) return manualDate;
+  return todayStr();
+}
+function setDateMode(mode) {
+  dateMode = mode;
+  ['today','exif','manual'].forEach(m => {
+    const c = document.getElementById('chip-' + m);
+    if (c) c.classList.toggle('active', m === mode);
+  });
+  const mi = document.getElementById('date-manual-input');
+  mi.style.display = mode === 'manual' ? 'block' : 'none';
+  updateDateHint();
+}
+function onManualDateChange() {
+  manualDate = document.getElementById('date-manual-input').value;
+  updateDateHint();
+}
+function updateDateHint() {
+  const d = getChosenDate();
+  const labels = { today: 'Idag', exif: 'Från bild', manual: 'Manuellt' };
+  document.getElementById('date-hint').textContent = labels[dateMode] + ' · ' + (d ? formatDate(d) : '—');
+}
+
+function extractExifDate(file) {
+  return new Promise(res => {
+    if (typeof EXIF === 'undefined') { res(null); return; }
+    EXIF.getData(file, function() {
+      const dt = EXIF.getTag(this, 'DateTimeOriginal') || EXIF.getTag(this, 'DateTime');
+      if (dt) {
+        const parts = dt.split(' ')[0].split(':');
+        if (parts.length === 3) { res(`${parts[0]}-${parts[1]}-${parts[2]}`); return; }
+      }
+      res(null);
+    });
+  });
+}
+
+// ── Views ─────────────────────────────────────────────────────────────────────
+function setView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  const idx = { gallery: 0, upload: 1, export: 2, settings: 3 }[v];
+  document.querySelectorAll('.nav-btn')[idx]?.classList.add('active');
+  if (v === 'gallery') renderGallery();
+  if (v === 'upload') renderUploadMeta();
+  if (v === 'export') renderExportView();
+}
+
+function updateHeader() {
+  document.getElementById('count-num').textContent = photos.length;
+  const pct = startDate ? Math.min(photos.length / 365 * 100, 100) : 0;
+  document.getElementById('progress').style.width = pct + '%';
+  const inDropbox = photos.filter(p => p.dropboxPath).length;
+  document.getElementById('count-sub').textContent = inDropbox > 0 ? `☁ ${inDropbox} i Dropbox` : '';
+}
+
+function renderGallery() {
+  updateHeader();
+  const today = todayStr();
+  const todayPhoto = photos.find(p => p.date === today);
+  const empty = document.getElementById('empty-state');
+  const banner = document.getElementById('today-banner');
+  const grid = document.getElementById('grid');
+
+  if (photos.length === 0) {
+    empty.style.display = 'block'; banner.style.display = 'none'; grid.innerHTML = ''; return;
+  }
+  empty.style.display = 'none';
+  if (!todayPhoto) {
+    banner.style.display = 'flex';
+    const dn = startDate ? dayNum(startDate, today) : '?';
+    document.getElementById('today-banner-text').textContent = `Dag ${dn} saknas — ${formatDate(today)}`;
+  } else { banner.style.display = 'none'; }
+
+  grid.innerHTML = [...photos].reverse().map(p => `
+    <div class="grid-item" onclick="openModal('${p.date}')">
+      ${p.thumb
+        ? `<img src="${p.thumb}" alt="Dag ${p.day}" loading="lazy">`
+        : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:28px">◷</div>`
+      }
+      ${!p.dropboxPath && getToken() ? `<div class="grid-uploading"></div>` : ''}
+      <div class="grid-label">
+        <div class="grid-day"><span>DAG ${p.day}</span>${p.dropboxPath ? '<span>☁</span>' : ''}</div>
+        ${p.note ? `<div class="grid-note">${p.note}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderUploadMeta() {
+  const today = todayStr();
+  const sd = startDate || today;
+  const dn = startDate ? dayNum(sd, today) : 1;
+  const todayPhoto = photos.find(p => p.date === today);
+  document.getElementById('upload-label').textContent = todayPhoto ? 'UPPDATERA DAGENS BILD' : `DAG ${dn} · ${formatDate(today)}`;
+  document.getElementById('date-manual-input').max = today;
+  updateDateHint();
+}
+
+function renderExportView() {
+  document.getElementById('export-count').textContent = `${photos.length} bilder`;
+  document.getElementById('zip-btn').disabled = photos.length === 0;
+  document.getElementById('collage-btn').disabled = photos.length === 0;
+}
+
+// ── File ──────────────────────────────────────────────────────────────────────
+function handleFile(file) {
+  if (!file?.type.startsWith('image/')) return;
+  currentFile = file;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    currentPreview = e.target.result;
+    document.getElementById('preview-img').src = currentPreview;
+    document.getElementById('preview-img').style.display = 'block';
+    document.getElementById('dropzone').style.display = 'none';
+    document.getElementById('change-btn').style.display = 'block';
+    document.getElementById('save-btn').textContent = 'SPARA →';
+
+    // EXIF
+    const ed = await extractExifDate(file);
+    const exifChip = document.getElementById('chip-exif');
+    if (ed) {
+      exifDate = ed;
+      exifChip.style.display = 'inline-block';
+      exifChip.textContent = `📷 FRÅN BILD (${formatDate(ed)})`;
+      if (ed !== todayStr()) setDateMode('exif');
+    } else {
+      exifDate = null;
+      exifChip.style.display = 'none';
+      if (dateMode === 'exif') setDateMode('today');
+    }
+    updateDateHint();
+  };
+  reader.readAsDataURL(file);
+}
+
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+async function confirmSave() {
+  if (!currentPreview) { document.getElementById('file-input').click(); return; }
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.textContent = 'SPARAR...';
+
+  const chosenDate = getChosenDate();
+  const sd = startDate || chosenDate;
+  const dn = dayNum(sd, chosenDate);
+  const note = document.getElementById('note-input').value.trim();
+  const filename = `dag${String(dn).padStart(3,'0')}_${chosenDate}.jpg`;
+
+  try {
+    btn.textContent = 'SKAPAR MINIATYR...';
+    const thumb = await makeThumb(currentPreview);
+    const newPhoto = { date: chosenDate, day: dn, note, thumb, dropboxPath: null };
+    const existing = photos.findIndex(p => p.date === chosenDate);
+    if (existing >= 0) photos[existing] = newPhoto;
+    else photos = [...photos, newPhoto].sort((a,b) => a.date.localeCompare(b.date));
+    if (!startDate) startDate = sd;
+    saveLocal();
+    const isBackdate = chosenDate !== todayStr();
+    showToast(`Dag ${dn} sparad${isBackdate ? ' (' + formatDate(chosenDate) + ')' : ''} ✓`);
+    resetUpload();
+    setView('gallery');
+
+    // Dropbox upload in background
+    if (getToken()) {
+      try {
+        btn.textContent = 'LADDAR UPP...';
+        const compressed = await compressJpeg(currentPreview || photos.find(p=>p.date===chosenDate)?.thumb || '');
+        const dbxPath = await uploadImageToDropbox(compressed, filename);
+        if (dbxPath) {
+          const idx = photos.findIndex(p => p.date === chosenDate);
+          if (idx >= 0) photos[idx].dropboxPath = dbxPath;
+          saveLocal();
+          await uploadMetadata();
+          showToast(`☁ Dag ${dn} i Dropbox ✓`);
+          renderGallery();
+        }
+      } catch(e) { console.error('Dropbox:', e); showToast('Dropbox-fel: ' + e.message, true); }
+    }
+  } catch(e) {
+    showToast('Fel: ' + e.message, true);
+  }
+  btn.disabled = false; btn.textContent = 'SPARA →';
+}
+
+function resetUpload() {
+  currentPreview = null; currentFile = null; exifDate = null; manualDate = null; dateMode = 'today';
+  document.getElementById('chip-exif').style.display = 'none';
+  document.getElementById('chip-today').classList.add('active');
+  document.getElementById('chip-manual').classList.remove('active');
+  document.getElementById('date-manual-input').style.display = 'none';
+  document.getElementById('date-manual-input').value = '';
+  document.getElementById('preview-img').style.display = 'none';
+  document.getElementById('dropzone').style.display = 'block';
+  document.getElementById('change-btn').style.display = 'none';
+  document.getElementById('note-input').value = '';
+  document.getElementById('file-input').value = '';
+  updateDateHint();
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function openModal(date) {
+  const p = photos.find(x => x.date === date);
+  if (!p) return;
+  selectedDate = date;
+  document.getElementById('modal-img').src = p.thumb || '';
+  document.getElementById('modal-img').style.display = p.thumb ? 'block' : 'none';
+  document.getElementById('modal-day').textContent = `Dag ${p.day}`;
+  document.getElementById('modal-date').textContent = formatDate(p.date);
+  document.getElementById('modal-note').textContent = p.note || '';
+  document.getElementById('modal-status').textContent = p.dropboxPath ? '☁ Dropbox/wristshot365' : '📱 Lokalt sparad';
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); selectedDate = null; }
+function deleteSelected() {
+  if (!selectedDate) return;
+  photos = photos.filter(p => p.date !== selectedDate);
+  saveLocal();
+  closeModal(); renderGallery();
+  showToast('Borttagen');
+  uploadMetadata().catch(() => {});
+}
+
+// ── Collage ───────────────────────────────────────────────────────────────────
+async function generateCollage() {
+  if (!photos.length) return;
+  const btn = document.getElementById('collage-btn');
+  btn.disabled = true; btn.textContent = 'GENERERAR...';
+  const canvas = document.getElementById('collage-canvas');
+  const cols = Math.ceil(Math.sqrt(photos.length));
+  const rows = Math.ceil(photos.length / cols);
+  const cell=160, gap=5, hdr=86;
+  canvas.width = cols*(cell+gap)+gap;
+  canvas.height = rows*(cell+gap)+gap+hdr;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle='#f7f3ee'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#1a1410'; ctx.font='bold 24px Georgia,serif'; ctx.textAlign='center';
+  ctx.fillText('WRISTSHOT 365', canvas.width/2, 38);
+  ctx.fillStyle='#9a7a4a'; ctx.font='12px Georgia,serif';
+  ctx.fillText(`${photos.length} dagar${startDate ? ' · ' + formatDate(startDate) : ''}`, canvas.width/2, 58);
+  ctx.fillStyle='#c8a96e'; ctx.fillRect(32,68,canvas.width-64,2);
+  const loadImg = src => new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; });
+  for (let i=0; i<photos.length; i++) {
+    const col=i%cols, row=Math.floor(i/cols);
+    const x=gap+col*(cell+gap), y=hdr+gap+row*(cell+gap);
+    try {
+      if (photos[i].thumb) { const img=await loadImg(photos[i].thumb); ctx.drawImage(img,0,0,img.width,img.height,x,y,cell,cell); }
+      else { ctx.fillStyle='#ede8e0'; ctx.fillRect(x,y,cell,cell); }
+    } catch { ctx.fillStyle='#ede8e0'; ctx.fillRect(x,y,cell,cell); }
+    ctx.fillStyle='rgba(250,247,243,0.85)'; ctx.fillRect(x,y+cell-18,cell,18);
+    ctx.fillStyle='#9a7a4a'; ctx.font='bold 9px monospace'; ctx.textAlign='left';
+    ctx.fillText(`DAG ${photos[i].day}`, x+4, y+cell-5);
+  }
+  canvas.style.display='block';
+  document.getElementById('download-collage-btn').style.display='inline-block';
+  btn.disabled=false; btn.textContent='SKAPA KOLLAGE (PNG)';
+}
+function downloadCollage() {
+  const a=document.createElement('a'); a.download=`wristshot365_${todayStr()}.png`;
+  a.href=document.getElementById('collage-canvas').toDataURL('image/png'); a.click();
+}
+
+// ── ZIP ───────────────────────────────────────────────────────────────────────
+async function exportZip() {
+  if (!photos.length) return;
+  const btn=document.getElementById('zip-btn');
+  btn.disabled=true; btn.textContent='PACKAR...';
+  try {
+    const zip=new JSZip();
+    const folder=zip.folder('wristshot365');
+    folder.file('metadata.json', JSON.stringify({ exportDate: new Date().toISOString(), startDate, totalDays: photos.length, photos: photos.map(({date,day,note})=>({date,day,note})) }, null, 2));
+    for (const p of photos) {
+      if (p.thumb) {
+        const b64=p.thumb.split(',')[1];
+        folder.file(`dag${String(p.day).padStart(3,'0')}_${p.date}.jpg`, b64, {base64:true});
+      }
+    }
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=`wristshot365_${todayStr()}.zip`; a.click();
+    URL.revokeObjectURL(url);
+    showToast(`ZIP med ${photos.length} bilder nedladdad ✓`);
+  } catch(e) { showToast('ZIP-fel: '+e.message, true); }
+  btn.disabled=false; btn.textContent='LADDA NED ZIP';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadLocal();
+renderGallery();
+document.getElementById('date-manual-input').max = todayStr();
+updateDateHint();
+// Show setup banner if no token
+if (!getToken()) document.getElementById('setup-banner').style.display = 'block';
+// Pre-fill settings token field if stored
+const storedToken = localStorage.getItem('dbx_token');
+if (storedToken) document.getElementById('token-input-settings').value = storedToken;
+</script>
+
+</body>
+</html>
